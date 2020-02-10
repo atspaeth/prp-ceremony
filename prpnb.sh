@@ -5,13 +5,21 @@ function die() {
     exit 1
 }
 
+function show_help() {
+    echo 'usage: prpnb notebook [-b BUCKET] [-v VARIABLE]*'
+    echo 
+    echo 'Creates a k8s job that executes a Jupyter notebook'
+    echo 'Options:'
+    echo ' -v the name of a variable to export to the container'
+    echo ' -b the name of the s3 bucket for intermediate storage'
+}
+
 # Some defaults that are useful to me but not in general :D
 : ${BUCKET:=braingeneers}
 : ${INTERNAL_ENDPOINT:=rook-ceph-rgw-nautiluss3.rook}
-: ${NUM_CORES:=4}
 
 NOTEBOOK=
-VARS=('JOB_NAME' 'NUM_CORES' 'USER' 'IN_URL' 'OUT_URL')
+VARS=('JOB_NAME' 'USER' 'IN_URL' 'OUT_URL')
 
 while :; do
     case $1 in
@@ -19,22 +27,6 @@ while :; do
         -h|-\?|--help)
             show_help
             exit
-            ;;
-
-        # Specify the number of cores to run on.
-        -c|--cores)
-            if [ "$2" ]; then
-                NUM_CORES=$2
-                shift
-            else
-                die 'ERR: "--cores" requires a non-empty argument'
-            fi
-            ;;
-        --cores=?*)
-            NUM_CORES=${1#*=}
-            ;;
-        --cores=)
-            die 'ERR: "--cores" requires a non-empty argument'
             ;;
 
         # Handle specification of the bucket. You can also provide the
@@ -72,10 +64,6 @@ while :; do
             ;;
 
         # Standard ones: end of options, and ignoring unknown flags.
-        --)
-            shift
-            break
-            ;;
         -?*)
             printf 'WARN: Unknown option (ignored): %s\n' "$1" >&2
             ;;
@@ -105,7 +93,7 @@ if [ -n "$NOTEBOOK" ]; then
     TIMESTAMP=
     BASENAME=$(basename $NOTEBOOK .ipynb | tr '[:upper:]' '[:lower:]')
     DATED_NOTEBOOK=$(date +%Y%m%d-%H%M%S)-$BASENAME
-    JOB_NAME=$USER-$DATED_NOTEBOOK
+    export JOB_NAME=$USER-$DATED_NOTEBOOK
 
     IN_URL="s3://$BUCKET/$USER/jobs/in/$DATED_NOTEBOOK.ipynb"
     OUT_URL="s3://$BUCKET/$USER/jobs/out/$DATED_NOTEBOOK.ipynb"
@@ -117,14 +105,12 @@ if [ -n "$NOTEBOOK" ]; then
     # Export all the variables envsubst is going to need.
     LITERALS=()
     for VAR in "${VARS[@]}"; do
-        export "$VAR"
         LITERALS+=("--from-literal=$VAR=${!VAR}")
     done
 
     # Also add a few other environment variables... 
     LITERALS+=("--from-literal=AWS_S3_ENDPOINT=http://$INTERNAL_ENDPOINT")
     LITERALS+=("--from-literal=S3_ENDPOINT=$INTERNAL_ENDPOINT")
-    LITERALS+=("--from-literal=OMP_NUM_THREADS=$NUM_CORES")
     LITERALS+=("--from-literal=S3_USE_HTTPS=0")
 
     kubectl create configmap "$JOB_NAME-config" "${LITERALS[@]}" || exit 1
@@ -132,7 +118,7 @@ if [ -n "$NOTEBOOK" ]; then
     # Construct a kubernetes job that will run the notebook based on
     # substituting environment variables into the template. 
     YMLFILE=$(dirname $0)/prpnb.yml
-    kubectl apply -f <(envsubst '$JOB_NAME $NUM_CORES' < "$YMLFILE") || exit 1
+    kubectl apply -f <(envsubst '$JOB_NAME' < "$YMLFILE") || exit 1
 fi
 
 # Sync any output files that have been produced.

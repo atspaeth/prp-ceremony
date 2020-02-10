@@ -19,11 +19,11 @@ spec:
             name: s3-credentials
         resources:
           requests:
-            cpu: "$NUM_CORES"
+            cpu: 1
             memory: "8Gi"
             nvidia.com/gpu: 0
           limits:
-            cpu: "$NUM_CORES"
+            cpu: 1
             memory: "16Gi"
             nvidia.com/gpu: 0
         command: ["/bin/bash", "-c", "echo 'Copying notebook to pod...' && aws --endpoint $(AWS_S3_ENDPOINT) s3 cp \"$(IN_URL)\" notebook.ipynb && jupyter nbconvert --ExecutePreprocessor.timeout=None --to notebook --allow-errors --inplace --debug --execute notebook.ipynb && echo 'Copying back out to s3' && aws --endpoint $(AWS_S3_ENDPOINT) s3 cp notebook.ipynb \"$(OUT_URL)\" && aws --endpoint $(AWS_S3_ENDPOINT) s3 rm \"$(IN_URL)\""]
