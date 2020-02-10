@@ -14,12 +14,13 @@ function show_help() {
     echo ' -b the name of the s3 bucket for intermediate storage'
 }
 
-# Some defaults that are useful to me but not in general :D
+# Assignment of default values.
 : ${BUCKET:=braingeneers}
 : ${INTERNAL_ENDPOINT:=rook-ceph-rgw-nautiluss3.rook}
 
 NOTEBOOK=
-VARS=('JOB_NAME' 'USER' 'IN_URL' 'OUT_URL')
+VARS=(JOB_NAME USER IN_URL OUT_URL OMP_NUM_THREADS \
+    AWS_S3_ENDPOINT S3_ENDPOINT S3_USE_HTTPS)
 
 while :; do
     case $1 in
@@ -63,11 +64,6 @@ while :; do
             die 'ERR: "--variable" requires a non-empty argument'
             ;;
 
-        # Standard ones: end of options, and ignoring unknown flags.
-        -?*)
-            printf 'WARN: Unknown option (ignored): %s\n' "$1" >&2
-            ;;
-
         # Anything that's not one of these patterns must be a notebook
         # filename; accept the first one, and error on any subsequent
         # ones. Also handle the case where $1 is empty, which means
@@ -101,17 +97,15 @@ if [ -n "$NOTEBOOK" ]; then
     # the appropriate values of the environment variables. 
     aws s3 cp "$NOTEBOOK" "$IN_URL" || exit 1
 
-    # Export all the variables envsubst is going to need.
+    # Create a list of variables to construct the configmap.
+    AWS_S3_ENDPOINT=http://$INTERNAL_ENDPOINT
+    S3_ENDPOINT=$INTERNAL_ENDPOINT
+    S3_USE_HTTPS=0
+    OMP_NUM_THREADS=1
     LITERALS=()
     for VAR in "${VARS[@]}"; do
         LITERALS+=("--from-literal=$VAR=${!VAR}")
     done
-
-    # Also add a few other environment variables... 
-    LITERALS+=("--from-literal=AWS_S3_ENDPOINT=http://$INTERNAL_ENDPOINT")
-    LITERALS+=("--from-literal=S3_ENDPOINT=$INTERNAL_ENDPOINT")
-    LITERALS+=("--from-literal=S3_USE_HTTPS=0")
-    LITERALS+=("--from-literal=OMP_NUM_THREADS=1")
 
     kubectl create configmap "$JOB_NAME-config" "${LITERALS[@]}" || exit 1
 
