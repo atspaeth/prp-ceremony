@@ -113,6 +113,11 @@ if [ -n "$NOTEBOOK" ]; then
     # substituting environment variables into the template. 
     YMLFILE=$(dirname $0)/prpnb.yml
     kubectl apply -f <(envsubst '$JOB_NAME' < "$YMLFILE") || exit 1
+
+    # Attach labels to the job and configmap so I can filter on them.
+    LABELS=("user=$USER" "notebook=$(basename $NOTEBOOK)" )
+    kubectl label configmap "$JOB_NAME-config" "${LABELS[@]}" || exit 1
+    kubectl label job "$JOB_NAME" "${LABELS[@]}" || exit 1
 fi
 
 # Sync any output files that have been produced.
