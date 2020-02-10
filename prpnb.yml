@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: $JOB_NAME
+spec:
+  # Don't restart if error
+  backoffLimit: 0
+  template:
+    spec:
+      containers:
+      - name: run-notebook
+        image: robcurrie/jupyter
+        imagePullPolicy: Always
+        envFrom:
+            - configMapRef:
+                name: $JOB_NAME-config
+        volumeMounts:
+          - mountPath: /root/.aws
+            name: s3-credentials
+        resources:
+          requests:
+            cpu: "$NUM_CORES"
+            memory: "8Gi"
+            nvidia.com/gpu: 0
+          limits:
+            cpu: "$NUM_CORES"
+            memory: "16Gi"
+            nvidia.com/gpu: 0
+        command: ["/bin/bash", "-c", "echo 'Copying notebook to pod...' && aws --endpoint $(AWS_S3_ENDPOINT) s3 cp \"$(IN_URL)\" notebook.ipynb && jupyter nbconvert --ExecutePreprocessor.timeout=None --to notebook --allow-errors --inplace --debug --execute notebook.ipynb && echo 'Copying back out to s3' && aws --endpoint $(AWS_S3_ENDPOINT) s3 cp notebook.ipynb \"$(OUT_URL)\" && aws --endpoint $(AWS_S3_ENDPOINT) s3 rm \"$(IN_URL)\""]
+      restartPolicy: Never
+      volumes:
+        - name: s3-credentials
+          secret:
+            secretName: prp-s3-credentials
