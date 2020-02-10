@@ -90,7 +90,6 @@ if [ -n "$NOTEBOOK" ]; then
 
     # You can't name things after a notebook that has uppercase
     # letters for some reason.
-    TIMESTAMP=
     BASENAME=$(basename $NOTEBOOK .ipynb | tr '[:upper:]' '[:lower:]')
     DATED_NOTEBOOK=$(date +%Y%m%d-%H%M%S)-$BASENAME
     export JOB_NAME=$USER-$DATED_NOTEBOOK
