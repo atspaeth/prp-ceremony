@@ -112,6 +112,7 @@ if [ -n "$NOTEBOOK" ]; then
     LITERALS+=("--from-literal=AWS_S3_ENDPOINT=http://$INTERNAL_ENDPOINT")
     LITERALS+=("--from-literal=S3_ENDPOINT=$INTERNAL_ENDPOINT")
     LITERALS+=("--from-literal=S3_USE_HTTPS=0")
+    LITERALS+=("--from-literal=OMP_NUM_THREADS=1")
 
     kubectl create configmap "$JOB_NAME-config" "${LITERALS[@]}" || exit 1
 
