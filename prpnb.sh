@@ -6,7 +6,7 @@ function die() {
 }
 
 function show_help() {
-    echo 'usage: prpnb notebook [-b BUCKET] [-v VARIABLE]*'
+    echo 'usage: prpnb [notebook] [-v VARIABLE]*'
     echo 
     echo 'Creates a k8s job that executes a Jupyter notebook'
     echo 'Options:'
@@ -15,7 +15,6 @@ function show_help() {
 }
 
 # Assignment of default values.
-: ${BUCKET:=braingeneers}
 : ${INTERNAL_ENDPOINT:=rook-ceph-rgw-nautiluss3.rook}
 
 NOTEBOOK=
@@ -30,23 +29,6 @@ while :; do
             exit
             ;;
 
-        # Handle specification of the bucket. You can also provide the
-        # BUCKET environment variable to accomplish the same thing.
-        -b|--bucket)
-            if [ "$2" ]; then
-                BUCKET=$2
-                shift
-            else
-                die 'ERR: "--bucket" requires a non-empty argument'
-            fi
-            ;;
-        --bucket=?*)
-            BUCKET=${1#*=}
-            ;;
-        --bucket=)
-            die 'ERR: "--bucket" requires a non-empty argument'
-            ;;
-
         # Variables to pass on to the container can be provided on the
         # command line. 
         -v|--variable)
@@ -56,12 +38,6 @@ while :; do
             else
                 die 'ERR: "--variable" requires a non-empty argument'
             fi
-            ;;
-        --variable=?*)
-            VARS+=(${1#*=})
-            ;;
-        --variable=)
-            die 'ERR: "--variable" requires a non-empty argument'
             ;;
 
         # Anything that's not one of these patterns must be a notebook
@@ -90,8 +66,8 @@ if [ -n "$NOTEBOOK" ]; then
     DATED_NOTEBOOK=$(date +%Y%m%d-%H%M%S)-$BASENAME
     export JOB_NAME=$USER-$DATED_NOTEBOOK
 
-    IN_URL="s3://$BUCKET/$USER/jobs/in/$DATED_NOTEBOOK.ipynb"
-    OUT_URL="s3://$BUCKET/$USER/jobs/out/$DATED_NOTEBOOK.ipynb"
+    IN_URL="s3://braingeneers/$USER/jobs/in/$DATED_NOTEBOOK.ipynb"
+    OUT_URL="s3://braingeneers/$USER/jobs/out/$DATED_NOTEBOOK.ipynb"
 
     # Upload the notebook, then construct a Kubernetes job that knows
     # the appropriate values of the environment variables. 
@@ -121,5 +97,5 @@ if [ -n "$NOTEBOOK" ]; then
 fi
 
 # Sync any output files that have been produced.
-aws s3 sync  "s3://$BUCKET/$USER/jobs/out/" ~/.kube/jobs/
-aws s3 rm --recursive "s3://$BUCKET/$USER/jobs/out/"
+aws s3 sync  "s3://braingeneers/$USER/jobs/out/" ~/.kube/jobs/
+aws s3 rm --recursive "s3://braingeneers/$USER/jobs/out/"
