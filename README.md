@@ -9,6 +9,25 @@ Usage steps:
    1) When the job is completed, run `prpnb.sh` again to download it into your local jobs folder. You can configure this with the environment variable $PRPNB_JOB_DIR; if unset, this defaults to ~/prpnb-jobs. 
    1) Be polite and clean up by deleting completed jobs and the associated configmaps. See which ones this script has created for you by running `kubectl get jobs -luser=$USER` and `kubectl get configmaps -luser=$USER`.
 
+Usage example once everything is set up:
+```bash
+$ export SPAM=eggs
+$ export PARROT=ex
+$ prpnb -v PARROT -v SPAM FooBar.ipynb
+upload: ./FooBar.ipynb to s3://braingeneers/atspaeth/jobs/in/20200212-124708-foobar.ipynb
+configmap/atspaeth-20200212-124708-foobar-config created
+job.batch/atspaeth-20200212-124708-foobar created
+configmap/atspaeth-20200212-124708-foobar-config labeled
+job.batch/atspaeth-20200212-124708-foobar labeled
+
+$ kubectl get jobs
+NAME                              COMPLETIONS   DURATION   AGE
+atspaeth-20200212-124708-foobar   1/1           11s        13s
+
+$ prpnb
+move: s3://braingeneers/atspaeth/jobs/out/20200212-124708-foobar.ipynb to ./prpnb-jobs/20200212-124708-foobar.ipynb
+```
+
 This is basically the same approach as [Rob Currie's](https://github.com/rcurrie/jupyter) Python script, but implemented in Bash because I don't know enough about the boto3 and kubernetes packages and they seemed to be creating some strange issues. 
 
 The script does the following:
