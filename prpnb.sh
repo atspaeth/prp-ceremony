@@ -16,6 +16,7 @@ function show_help() {
 
 # Assignment of default values.
 : ${INTERNAL_ENDPOINT:=rook-ceph-rgw-nautiluss3.rook}
+: ${PRPNB_JOB_DIR:=~/prpnb-jobs}
 
 NOTEBOOK=
 VARS=(JOB_NAME USER IN_URL OUT_URL OMP_NUM_THREADS \
@@ -96,6 +97,6 @@ if [ -n "$NOTEBOOK" ]; then
     kubectl label job "$JOB_NAME" "${LABELS[@]}" || exit 1
 fi
 
-# Sync any output files that have been produced.
-aws s3 sync  "s3://braingeneers/$USER/jobs/out/" ~/.kube/jobs/
-aws s3 rm --recursive "s3://braingeneers/$USER/jobs/out/"
+# Sync completed remote notebooks down to the local job directory.
+aws s3 mv --recursive "s3://braingeneers/$USER/jobs/out/" "$PRPNB_JOB_DIR"
+
