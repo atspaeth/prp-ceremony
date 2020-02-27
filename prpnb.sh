@@ -29,6 +29,15 @@ NOTEBOOK=
 VARS=(JOB_NAME USER IN_URL OUT_URL OMP_NUM_THREADS \
     AWS_S3_ENDPOINT S3_ENDPOINT S3_USE_HTTPS)
 
+function parse_assignment() {
+    if [ -n "$1" ]; then
+        export "$1"
+        VARS+=(${1%%=*})
+    else
+        die 'ERR: "--variable" requires a non-empty argument'
+    fi
+}
+
 while :; do
     case $1 in
         # Help options. 
@@ -40,14 +49,12 @@ while :; do
         # Variables to pass on to the container can be provided on the
         # command line. You can also set their values directly in the
         # command line with the syntax -v SPAM=eggs
-        -v|--variable)
-            if [ -n "$2" ]; then
-                export "$2"
-                VARS+=(${2%%=*})
-                shift
-            else
-                die 'ERR: "--variable" requires a non-empty argument'
-            fi
+        -v)
+            shift
+            parse_assignment "$1"
+            ;;
+        -v*)
+            parse_assignment "${1#-v}"
             ;;
 
         # Anything that's not one of these patterns must be a notebook
@@ -79,8 +86,7 @@ if [ -n "$NOTEBOOK" ]; then
     IN_URL="s3://braingeneers/$USER/jobs/in/$DATED_NOTEBOOK.ipynb"
     OUT_URL="s3://braingeneers/$USER/jobs/out/$DATED_NOTEBOOK.ipynb"
 
-    # Upload the notebook, then construct a Kubernetes job that knows
-    # the appropriate values of the environment variables. 
+    # Upload the notebook to s3 where the job can get it.
     aws s3 cp "$NOTEBOOK" "$IN_URL" || exit 1
 
     # Create a list of variables to construct the configmap.
@@ -101,11 +107,19 @@ if [ -n "$NOTEBOOK" ]; then
     kubectl apply -f <(envsubst '$JOB_NAME' < "$YMLFILE") || exit 1
 
     # Attach labels to the job and configmap so I can filter on them.
-    LABELS=("user=$USER" "notebook=$(basename $NOTEBOOK)" )
+    LABELS=("user=$USER" "notebook=$(basename $NOTEBOOK)" prpnb=prpnb)
     kubectl label configmap "$JOB_NAME-config" "${LABELS[@]}" || exit 1
     kubectl label job "$JOB_NAME" "${LABELS[@]}" || exit 1
 fi
 
 # Sync completed remote notebooks down to the local job directory.
 aws s3 mv --recursive "s3://braingeneers/$USER/jobs/out/" "$PRPNB_JOB_DIR"
+
+# Finally, delete all the completed jobs and their configmaps.
+QUERY='{.items[?(@.status.succeeded==1)].metadata.name}'
+COMPLETED=($(kubectl get jobs "-o=jsonpath=$QUERY" -lprpnb=prpnb))
+for JOB in "${COMPLETED[@]}"; do
+    kubectl delete job "$JOB"
+    kubectl delete configmap "$JOB"-config
+done
 
