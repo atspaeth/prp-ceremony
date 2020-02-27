@@ -6,12 +6,19 @@ function die() {
 }
 
 function show_help() {
-    echo 'usage: prpnb [notebook] [-v VARIABLE]*'
-    echo 
-    echo 'Creates a k8s job that executes a Jupyter notebook'
-    echo 'Options:'
-    echo ' -v the name of a variable to export to the container'
-    echo ' -b the name of the s3 bucket for intermediate storage'
+    echo "usage: prpnb [notebook] [-v VARIABLE]*
+
+Creates a k8s job that executes a Jupyter notebook
+
+Options:
+ -h   Show this message and exit.
+ -v   The name of a variable to export to the container, or an
+      expression (e.g. SPAM=eggs) to be exported.
+
+If a notebook is provided, it will be run on the PRP. Otherwise, the
+notebook output directory will be checked for completed jobs, and any
+output notebooks will be downloaded.
+"
 }
 
 # Assignment of default values.
@@ -31,10 +38,12 @@ while :; do
             ;;
 
         # Variables to pass on to the container can be provided on the
-        # command line. 
+        # command line. You can also set their values directly in the
+        # command line with the syntax -v SPAM=eggs
         -v|--variable)
-            if [ "$2" ]; then
-                VARS+=($2)
+            if [ -n "$2" ]; then
+                export "$2"
+                VARS+=(${2%%=*})
                 shift
             else
                 die 'ERR: "--variable" requires a non-empty argument'
