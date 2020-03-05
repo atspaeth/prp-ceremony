@@ -7,7 +7,6 @@ Usage steps:
    1) Start the notebook on the cluster, passing the variable along with `./prpnb.sh -v XYZZY Advent.ipynb`. Alternately, you can pass literal values for the variables, like `./prpnb.sh -v PANIC=0 Guide.ipynb`.
    1) Go do something else. You can check on the job status with `kubectl get jobs -lnotebook=FooBar.ipynb`.
    1) When the job is completed, run `prpnb.sh` again to download it into your local jobs folder. You can configure this with the environment variable $PRPNB_JOB_DIR; if unset, this defaults to ~/prpnb-jobs. 
-   1) Be polite and clean up by deleting completed jobs and the associated configmaps. See which ones this script has created for you by running `kubectl get jobs -luser=$USER` and `kubectl get configmaps -luser=$USER`.
 
 Usage example once everything is set up:
 ```bash

@@ -117,7 +117,8 @@ aws s3 mv --recursive "s3://braingeneers/$USER/jobs/out/" "$PRPNB_JOB_DIR"
 
 # Finally, delete all the completed jobs and their configmaps.
 QUERY='{.items[?(@.status.succeeded==1)].metadata.name}'
-COMPLETED=($(kubectl get jobs "-o=jsonpath=$QUERY" -lprpnb=prpnb))
+COMPLETED=($(kubectl get jobs \
+    "-o=jsonpath=$QUERY" -lprpnb=prpnb -luser="$USER"))
 for JOB in "${COMPLETED[@]}"; do
     kubectl delete job "$JOB"
     kubectl delete configmap "$JOB"-config
