@@ -24,6 +24,8 @@ atspaeth-20200212-124708-foobar   1/1           11s        13s
 
 $ prpnb
 move: s3://braingeneers/atspaeth/jobs/out/20200212-124708-foobar.ipynb to ./prpnb-jobs/20200212-124708-foobar.ipynb
+job.batch "atspaeth-20200212-124708-foobar" deleted
+configmap "atspaeth-20200212-124708-foobar-config" deleted
 ```
 
 This is basically the same approach as [Rob Currie's](https://github.com/rcurrie/jupyter) Python script, but implemented in Bash because I don't know enough about the boto3 and kubernetes packages and they seemed to be creating some strange issues. 
