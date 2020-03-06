@@ -6,14 +6,15 @@ function die() {
 }
 
 function show_help() {
-    echo "usage: prpnb [notebook] [-v VARIABLE]*
+    echo "usage: prpnb [-p PROFILE] [notebook] [-v VARIABLE]*
 
 Creates a k8s job that executes a Jupyter notebook
 
 Options:
  -h   Show this message and exit.
- -v   The name of a variable to export to the container, or an
-      expression (e.g. SPAM=eggs) to be exported.
+ -p   Specify the awscli profile to use
+ -v   Provide the name of a variable to export to the container,
+      or an expression (e.g. SPAM=eggs) to be exported.
 
 If a notebook is provided, it will be run on the PRP. Otherwise, the
 notebook output directory will be checked for completed jobs, and any
@@ -22,8 +23,9 @@ output notebooks will be downloaded.
 }
 
 # Assignment of default values.
-: ${INTERNAL_ENDPOINT:=rook-ceph-rgw-nautiluss3.rook}
+: ${PRPNB_INTERNAL_ENDPOINT:=rook-ceph-rgw-nautiluss3.rook}
 : ${PRPNB_JOB_DIR:=~/prpnb-jobs}
+: ${PRPNB_AWSCLI_PROFILE:=prpnb}
 
 NOTEBOOK=
 VARS=(JOB_NAME USER IN_URL OUT_URL OMP_NUM_THREADS \
@@ -40,10 +42,20 @@ function parse_assignment() {
 
 while :; do
     case $1 in
-        # Help options. 
+        # Help options.
         -h|-\?|--help)
             show_help
             exit
+            ;;
+
+        # Select an awscli profile so people can use both PRP and
+        # actual Amazon S3 without weird config juggling.
+        -p)
+            shift
+            PRPNB_AWSCLI_PROFILE=$2
+            ;;
+        -p*)
+            PRPNB_AWSCLI_PROFILE="${1#-p}"
             ;;
 
         # Variables to pass on to the container can be provided on the
@@ -87,11 +99,12 @@ if [ -n "$NOTEBOOK" ]; then
     OUT_URL="s3://braingeneers/$USER/jobs/out/$DATED_NOTEBOOK.ipynb"
 
     # Upload the notebook to s3 where the job can get it.
-    aws s3 cp "$NOTEBOOK" "$IN_URL" || exit 1
+    aws "--profile=$PRPNB_AWSCLI_PROFILE" s3 \
+        cp "$NOTEBOOK" "$IN_URL" || exit 1
 
     # Create a list of variables to construct the configmap.
-    AWS_S3_ENDPOINT=http://$INTERNAL_ENDPOINT
-    S3_ENDPOINT=$INTERNAL_ENDPOINT
+    AWS_S3_ENDPOINT=http://$PRPNB_INTERNAL_ENDPOINT
+    S3_ENDPOINT=$PRPNB_INTERNAL_ENDPOINT
     S3_USE_HTTPS=0
     OMP_NUM_THREADS=1
     LITERALS=()
@@ -102,7 +115,7 @@ if [ -n "$NOTEBOOK" ]; then
     kubectl create configmap "$JOB_NAME-config" "${LITERALS[@]}" || exit 1
 
     # Construct a kubernetes job that will run the notebook based on
-    # substituting environment variables into the template. 
+    # substituting environment variables into the template.
     YMLFILE=$(dirname $0)/prpnb.yml
     kubectl apply -f <(envsubst '$JOB_NAME' < "$YMLFILE") || exit 1
 
@@ -113,12 +126,12 @@ if [ -n "$NOTEBOOK" ]; then
 fi
 
 # Sync completed remote notebooks down to the local job directory.
-aws s3 mv --recursive "s3://braingeneers/$USER/jobs/out/" "$PRPNB_JOB_DIR"
+aws "--profile=$PRPNB_AWSCLI_PROFILE" s3 \
+    mv --recursive "s3://braingeneers/$USER/jobs/out/" "$PRPNB_JOB_DIR"
 
 # Finally, delete all the completed jobs and their configmaps.
-QUERY='{.items[?(@.status.succeeded==1)].metadata.name}'
-COMPLETED=($(kubectl get jobs \
-    "-o=jsonpath=$QUERY" -lprpnb=prpnb -luser="$USER"))
+COMPLETED=($(kubectl get jobs -lprpnb=prpnb -luser="$USER" \
+    "-o=jsonpath={.items[?(@.status.succeeded==1)].metadata.name}"))
 for JOB in "${COMPLETED[@]}"; do
     kubectl delete job "$JOB"
     kubectl delete configmap "$JOB"-config
