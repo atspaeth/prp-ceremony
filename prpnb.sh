@@ -27,6 +27,9 @@ output notebooks will be downloaded.
 : ${PRPNB_JOB_DIR:=~/prpnb-jobs}
 : ${PRPNB_AWSCLI_PROFILE:=prpnb}
 
+# Not really for configuration, but an important value.
+S3_BASE_DIR="s3://braingeneers/personal/$USER/jobs"
+
 NOTEBOOK=
 VARS=(JOB_NAME USER IN_URL OUT_URL OMP_NUM_THREADS \
     AWS_S3_ENDPOINT S3_ENDPOINT S3_USE_HTTPS)
@@ -133,8 +136,8 @@ if [ -n "$NOTEBOOK" ]; then
     DATED_NOTEBOOK=$(date +%Y%m%d-%H%M%S)-$BASENAME
     export JOB_NAME=$USER-$DATED_NOTEBOOK
 
-    IN_URL="s3://braingeneers/$USER/jobs/in/$DATED_NOTEBOOK.ipynb"
-    OUT_URL="s3://braingeneers/$USER/jobs/out/$DATED_NOTEBOOK.ipynb"
+    IN_URL="$S3_BASE_DIR/in/$DATED_NOTEBOOK.ipynb"
+    OUT_URL="$S3_BASE_DIR/out/$DATED_NOTEBOOK.ipynb"
 
     # Upload the notebook to s3 where the job can get it.
     aws s3 cp "$NOTEBOOK" "$IN_URL" || exit 1
@@ -163,7 +166,7 @@ if [ -n "$NOTEBOOK" ]; then
 fi
 
 # Sync completed remote notebooks down to the local job directory.
-aws s3 mv --recursive "s3://braingeneers/$USER/jobs/out/" "$PRPNB_JOB_DIR"
+aws s3 mv --recursive "$S3_BASE_DIR/out/" "$PRPNB_JOB_DIR"
 
 # Finally, delete all the completed jobs and their configmaps.
 COMPLETED=($(kubectl get jobs -lprpnb=prpnb -luser="$USER" \
