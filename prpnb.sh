@@ -22,22 +22,25 @@ output notebooks will be downloaded.
 "
 }
 
+function aws () {
+    command aws "${aws_args[@]}" "$@"
+}
+
 # Assignment of default values.
 : ${PRPNB_INTERNAL_ENDPOINT:=rook-ceph-rgw-nautiluss3.rook}
 : ${PRPNB_JOB_DIR:=~/prpnb-jobs}
-: ${PRPNB_AWSCLI_PROFILE:=prpnb}
 
-# Not really for configuration, but an important value.
-S3_BASE_DIR="s3://braingeneers/personal/$USER/jobs"
-
-NOTEBOOK=
-VARS=(JOB_NAME USER IN_URL OUT_URL OMP_NUM_THREADS \
+# Initial values for variables to define through flags.
+s3_base_dir="s3://braingeneers/personal/$USER/jobs"
+aws_args=()
+notebook=
+vars=(JOB_NAME USER IN_URL OUT_URL OMP_NUM_THREADS \
     AWS_S3_ENDPOINT S3_ENDPOINT S3_USE_HTTPS)
 
 function parse_assignment() {
     if [ -n "$1" ]; then
         export "$1"
-        VARS+=(${1%%=*})
+        vars+=(${1%%=*})
     else
         die 'ERR: "--variable" requires a non-empty argument'
     fi
@@ -55,27 +58,27 @@ while :; do
         # actual Amazon S3 without weird config juggling.
         -p|--profile)
             shift
-            PRPNB_AWSCLI_PROFILE=$2
+            aws_args+=("--profile=$1")
             ;;
         --profile=*)
-            PRPNB_AWSCLI_PROFILE="${1#--profile=}"
+            aws_args+=("$1")
             ;;
         -p*)
-            PRPNB_AWSCLI_PROFILE="${1#-p}"
+            aws_args+=(--profile="${1#-p}")
             ;;
 
         # Also accept an endpoint argument and pass it to awscli.
         --endpoint)
             shift
-            ENDPOINT_ARG="--endpoint=$1"
+            aws_args+=("--endpoint=$1")
             ;;
         --endpoint=*)
-            ENDPOINT_ARG=$1
+            aws_args+=("$1")
             ;;
 
         # Activate test mode.
         --test)
-            activate_test_mode=yep
+            test_mode=yes
             ;;
 
         # Variables to pass on to the container can be provided on the
@@ -96,83 +99,74 @@ while :; do
         *)
             if [ -z "$1" ]; then
                 break
-            elif [ -n "$NOTEBOOK" ]; then
+            elif [ -n "$notebook" ]; then
                 die 'ERR: too many notebooks provided'
             else
-                NOTEBOOK=$1
+                notebook=$1
             fi
             ;;
     esac
     shift
 done
 
-PRPNB_AWS_ARGS=(--profile="$PRPNB_AWSCLI_PROFILE")
-if [ -n "$ENDPOINT_ARG" ]; then
-    AWS_ARGS+=("$ENDPOINT_ARG")
-fi
-
-function aws () {
-    command aws "${AWS_ARGS[@]}" "$@"
-}
-
-if [ xyep == x"$activate_test_mode" ]; then
+if [ xyes == x"$test_mode" ]; then
     aws s3 ls s3://braingeneers/ || exit 1
 
     kubectl get jobs || exit 1
 
-    if [ -n "$NOTEBOOK" ]; then
-        echo Would now upload "$NOTEBOOK"
+    if [ -n "$notebook" ]; then
+        echo Would now upload "$notebook"
     fi
 
     exit 0
 fi
 
 # If a notebook was provided, run it. Otherwise, just sync.
-if [ -n "$NOTEBOOK" ]; then
+if [ -n "$notebook" ]; then
 
     # You can't name things after a notebook that has uppercase
     # letters for some reason.
-    BASENAME=$(basename $NOTEBOOK .ipynb | tr '[:upper:]' '[:lower:]')
-    DATED_NOTEBOOK=$(date +%Y%m%d-%H%M%S)-$BASENAME
-    export JOB_NAME=$USER-$DATED_NOTEBOOK
+    basename=$(basename $notebook .ipynb | tr '[:upper:]' '[:lower:]')
+    dated_notebook=$(date +%Y%m%d-%H%M%S)-$basename
+    export JOB_NAME=$USER-$dated_notebook
 
-    IN_URL="$S3_BASE_DIR/in/$DATED_NOTEBOOK.ipynb"
-    OUT_URL="$S3_BASE_DIR/out/$DATED_NOTEBOOK.ipynb"
+    IN_URL="$s3_base_dir/in/$dated_notebook.ipynb"
+    OUT_URL="$s3_base_dir/out/$dated_notebook.ipynb"
 
     # Upload the notebook to s3 where the job can get it.
-    aws s3 cp "$NOTEBOOK" "$IN_URL" || exit 1
+    aws s3 cp "$notebook" "$IN_URL" || exit 1
 
     # Create a list of variables to construct the configmap.
     AWS_S3_ENDPOINT=http://$PRPNB_INTERNAL_ENDPOINT
     S3_ENDPOINT=$PRPNB_INTERNAL_ENDPOINT
     S3_USE_HTTPS=0
     OMP_NUM_THREADS=1
-    LITERALS=()
-    for VAR in "${VARS[@]}"; do
-        LITERALS+=("--from-literal=$VAR=${!VAR}")
+    literals=()
+    for var in "${vars[@]}"; do
+        literals+=("--from-literal=$var=${!var}")
     done
 
-    kubectl create configmap "$JOB_NAME-config" "${LITERALS[@]}" || exit 1
+    kubectl create configmap "$JOB_NAME-config" "${literals[@]}" || exit 1
 
     # Construct a kubernetes job that will run the notebook based on
     # substituting environment variables into the template.
-    YMLFILE=$(dirname $0)/prpnb.yml
-    kubectl apply -f <(envsubst '$JOB_NAME' < "$YMLFILE") || exit 1
+    ymlfile=$(dirname $0)/prpnb.yml
+    kubectl apply -f <(envsubst '$JOB_NAME' < "$ymlfile") || exit 1
 
     # Attach labels to the job and configmap so I can filter on them.
-    LABELS=("user=$USER" "notebook=$(basename $NOTEBOOK)" prpnb=prpnb)
-    kubectl label configmap "$JOB_NAME-config" "${LABELS[@]}" || exit 1
-    kubectl label job "$JOB_NAME" "${LABELS[@]}" || exit 1
+    labels=("user=$USER" "notebook=$(basename $notebook)" prpnb=prpnb)
+    kubectl label configmap "$JOB_NAME-config" "${labels[@]}" || exit 1
+    kubectl label job "$JOB_NAME" "${labels[@]}" || exit 1
 fi
 
 # Sync completed remote notebooks down to the local job directory.
-aws s3 mv --recursive "$S3_BASE_DIR/out/" "$PRPNB_JOB_DIR"
+aws s3 mv --recursive "$s3_base_dir/out/" "$PRPNB_JOB_DIR"
 
 # Finally, delete all the completed jobs and their configmaps.
-COMPLETED=($(kubectl get jobs -lprpnb=prpnb -luser="$USER" \
+completed=($(kubectl get jobs -lprpnb=prpnb -luser="$USER" \
     "-o=jsonpath={.items[?(@.status.succeeded==1)].metadata.name}"))
-for JOB in "${COMPLETED[@]}"; do
-    kubectl delete job "$JOB"
-    kubectl delete configmap "$JOB"-config
+for job in "${completed[@]}"; do
+    kubectl delete job "$job"
+    kubectl delete configmap "$job"-config
 done
 
