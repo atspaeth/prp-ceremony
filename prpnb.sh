@@ -50,12 +50,29 @@ while :; do
 
         # Select an awscli profile so people can use both PRP and
         # actual Amazon S3 without weird config juggling.
-        -p)
+        -p|--profile)
             shift
             PRPNB_AWSCLI_PROFILE=$2
             ;;
+        --profile=*)
+            PRPNB_AWSCLI_PROFILE="${1#--profile=}"
+            ;;
         -p*)
             PRPNB_AWSCLI_PROFILE="${1#-p}"
+            ;;
+
+        # Also accept an endpoint argument and pass it to awscli.
+        --endpoint)
+            shift
+            ENDPOINT_ARG="--endpoint=$1"
+            ;;
+        --endpoint=*)
+            ENDPOINT_ARG=$1
+            ;;
+
+        # Activate test mode.
+        --test)
+            activate_test_mode=yep
             ;;
 
         # Variables to pass on to the container can be provided on the
@@ -86,6 +103,27 @@ while :; do
     shift
 done
 
+PRPNB_AWS_ARGS=(--profile="$PRPNB_AWSCLI_PROFILE")
+if [ -n "$ENDPOINT_ARG" ]; then
+    AWS_ARGS+=("$ENDPOINT_ARG")
+fi
+
+function aws () {
+    command aws "${AWS_ARGS[@]}" "$@"
+}
+
+if [ xyep == x"$activate_test_mode" ]; then
+    aws s3 ls s3://braingeneers/ || exit 1
+
+    kubectl get jobs || exit 1
+
+    if [ -n "$NOTEBOOK" ]; then
+        echo Would now upload "$NOTEBOOK"
+    fi
+
+    exit 0
+fi
+
 # If a notebook was provided, run it. Otherwise, just sync.
 if [ -n "$NOTEBOOK" ]; then
 
@@ -99,8 +137,7 @@ if [ -n "$NOTEBOOK" ]; then
     OUT_URL="s3://braingeneers/$USER/jobs/out/$DATED_NOTEBOOK.ipynb"
 
     # Upload the notebook to s3 where the job can get it.
-    aws "--profile=$PRPNB_AWSCLI_PROFILE" s3 \
-        cp "$NOTEBOOK" "$IN_URL" || exit 1
+    aws s3 cp "$NOTEBOOK" "$IN_URL" || exit 1
 
     # Create a list of variables to construct the configmap.
     AWS_S3_ENDPOINT=http://$PRPNB_INTERNAL_ENDPOINT
@@ -126,8 +163,7 @@ if [ -n "$NOTEBOOK" ]; then
 fi
 
 # Sync completed remote notebooks down to the local job directory.
-aws "--profile=$PRPNB_AWSCLI_PROFILE" s3 \
-    mv --recursive "s3://braingeneers/$USER/jobs/out/" "$PRPNB_JOB_DIR"
+aws s3 mv --recursive "s3://braingeneers/$USER/jobs/out/" "$PRPNB_JOB_DIR"
 
 # Finally, delete all the completed jobs and their configmaps.
 COMPLETED=($(kubectl get jobs -lprpnb=prpnb -luser="$USER" \
