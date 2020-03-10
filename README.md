@@ -1,12 +1,14 @@
 This Bash script and associated yaml file create a Kubernetes job to run a Jupyter notebook on the PRP cluster and save it back to the local disk. Environment variables can be exported from the shell so the same notebook can be run with different parameter values.
 
 Usage steps:
-   1) Set up kubernetes and awscli; make sure both `kubectl get jobs` and `aws --profile prpnb s3 ls braingeneers` work. Use [awscli-plugin-endpoint](https://github.com/wbingli/awscli-plugin-endpoint), not an alias, to specify the endpoint to ensure it gets passed into the script.
+   1) Set up kubernetes and awscli; make sure both `kubectl get jobs` and `aws s3 ls braingeneers` work.
    1) Create a Jupyter notebook which uses the values of some environment variables through e.g. `os.environ['FISH']`
    1) Export the shell variables you want to use, e.g. `export XYZZY=plover`
    1) Start the notebook on the cluster, passing the variable along with `./prpnb.sh -v XYZZY Advent.ipynb`. Alternately, you can pass literal values for the variables, like `./prpnb.sh -v PANIC=0 Guide.ipynb`.
    1) Go do something else. You can check on the job status with `kubectl get jobs -lnotebook=FooBar.ipynb`.
    1) When the job is completed, run `prpnb.sh` again to download it into your local jobs folder. You can configure this with the environment variable $PRPNB_JOB_DIR; if unset, this defaults to ~/prpnb-jobs. 
+
+This script accepts the same --profile and --endpoint arguments as `aws`. You can make things more convenient by using [awscli-plugin-endpoint](https://github.com/wbingli/awscli-plugin-endpoint) to associate an endpoint with each profile, and setting the environment variable PRPNB_AWSCLI_PROFILE to the profile associated with PRP S3. In that case, neither --profile nor --endpoint needs to be passed to this script.
 
 Usage example once everything is set up:
 ```bash
