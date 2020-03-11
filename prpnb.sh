@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd $(dirname $0) && echo -n 'Git: ' && git pull || exit 1
+
 function die() {
     printf '%s\n' "$1" >&2
     exit 1
@@ -26,14 +28,13 @@ function aws () {
     command aws "${aws_args[@]}" "$@"
 }
 
-# Assignment of default values.
-: ${PRPNB_INTERNAL_ENDPOINT:=rook-ceph-rgw-nautiluss3.rook}
-: ${PRPNB_JOB_DIR:=~/prpnb-jobs}
-
-# Initial values for variables to define through flags.
+# Default values and parameters.
+S3_ENDPOINT=${PRPNB_INTERNAL_ENDPOINT:-rook-ceph-rgw-nautiluss3.rook}
+job_dir=${PRPNB_JOB_DIR:-~/prpnb-jobs}
+profile=${PRPNB_AWSCLI_PROFILE:-prpnb}
 s3_base_dir="s3://braingeneers/personal/$USER/jobs"
-aws_args=()
 notebook=
+aws_args=()
 vars=(JOB_NAME USER IN_URL OUT_URL OMP_NUM_THREADS \
     AWS_S3_ENDPOINT S3_ENDPOINT S3_USE_HTTPS)
 
@@ -58,27 +59,22 @@ while :; do
         # actual Amazon S3 without weird config juggling.
         -p|--profile)
             shift
-            aws_args+=("--profile=$1")
+            profile="$1"
             ;;
         --profile=*)
-            aws_args+=("$1")
+            profile="${1#--profile=}"
             ;;
         -p*)
-            aws_args+=(--profile="${1#-p}")
+            profile="${1#-p}"
             ;;
 
         # Also accept an endpoint argument and pass it to awscli.
         --endpoint)
             shift
-            aws_args+=("--endpoint=$1")
+            endpoint="$1"
             ;;
         --endpoint=*)
-            aws_args+=("$1")
-            ;;
-
-        # Activate test mode.
-        --test)
-            test_mode=yes
+            endpoint="${1#--endpoint=}"
             ;;
 
         # Variables to pass on to the container can be provided on the
@@ -109,17 +105,8 @@ while :; do
     shift
 done
 
-if [ xyes == x"$test_mode" ]; then
-    aws s3 ls s3://braingeneers/ || exit 1
-
-    kubectl get jobs || exit 1
-
-    if [ -n "$notebook" ]; then
-        echo Would now upload "$notebook"
-    fi
-
-    exit 0
-fi
+if [ -n "$endpoint" ]; then aws_args+=(--endpoint="$endpoint"); fi
+if [ -n "$profile" ]; then aws_args+=(--profile="$profile"); fi
 
 # If a notebook was provided, run it. Otherwise, just sync.
 if [ -n "$notebook" ]; then
@@ -137,8 +124,7 @@ if [ -n "$notebook" ]; then
     aws s3 cp "$notebook" "$IN_URL" || exit 1
 
     # Create a list of variables to construct the configmap.
-    AWS_S3_ENDPOINT=http://$PRPNB_INTERNAL_ENDPOINT
-    S3_ENDPOINT=$PRPNB_INTERNAL_ENDPOINT
+    AWS_S3_ENDPOINT="http://$S3_ENDPOINT"
     S3_USE_HTTPS=0
     OMP_NUM_THREADS=1
     literals=()
@@ -160,10 +146,10 @@ if [ -n "$notebook" ]; then
 fi
 
 # Sync completed remote notebooks down to the local job directory.
-aws s3 mv --recursive "$s3_base_dir/out/" "$PRPNB_JOB_DIR"
+aws s3 mv --recursive "$s3_base_dir/out/" "$job_dir"
 
 # Finally, delete all the completed jobs and their configmaps.
-completed=($(kubectl get jobs -lprpnb=prpnb -luser="$USER" \
+completed=($(command kubectl get jobs -lprpnb=prpnb -luser="$USER" \
     "-o=jsonpath={.items[?(@.status.succeeded==1)].metadata.name}"))
 for job in "${completed[@]}"; do
     kubectl delete job "$job"
