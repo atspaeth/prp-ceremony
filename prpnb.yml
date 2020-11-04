@@ -3,7 +3,6 @@ kind: Job
 metadata:
   name: $JOB_NAME
 spec:
-  # Don't restart if error
   backoffLimit: 0
   template:
     spec:
@@ -38,4 +37,4 @@ spec:
       volumes:
         - name: s3-credentials
           secret:
-            secretName: prp-s3-credentials
+            secretName: prpnb-s3-config

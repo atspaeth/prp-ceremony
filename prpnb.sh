@@ -47,6 +47,10 @@ function parse_assignment() {
     fi
 }
 
+if [ -z "$USER" ]; then
+    die 'ERR: you need to provide a username in the variable $USER.'
+fi
+
 while :; do
     case $1 in
         # Help options.
